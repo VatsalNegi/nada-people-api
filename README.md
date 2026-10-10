@@ -1,54 +1,95 @@
 # Nada People API
 
-A small in-memory REST API for people and mutual connections, built with the JDK's
-built-in `com.sun.net.httpserver.HttpServer`, Jackson, and JUnit 5. Java 17, Maven.
+A small in-memory REST API for people and mutual connections, built with the JDK's built-in `com.sun.net.httpserver.HttpServer`, Jackson, and JUnit 5.
+
+**Technology:** Java 17, Maven, Jackson, JUnit 5.
 
 ## Prerequisites
-- JDK 17
-- Maven 3.9+ (on Windows, e.g. `C:\ProgramData\chocolatey\lib\maven\apache-maven-3.9.16\bin\mvn.cmd`)
 
-## Build, test, run (Windows PowerShell)
+- JDK 17
+- Maven 3.9 or later
+
+On Windows, Maven can be run using its full path if it is not configured in `PATH`.
+
+## Build, Test, and Run
+
+Open PowerShell in the project directory.
+
 ```powershell
 $mvn = "C:\ProgramData\chocolatey\lib\maven\apache-maven-3.9.16\bin\mvn.cmd"
+
+# Compile and run automated tests
 & $mvn clean test
-& $mvn exec:java "-Dexec.mainClass=com.nada.Application"      # listens on 8080
-& $mvn exec:java "-Dexec.mainClass=com.nada.Application" "-Dexec.args=9090"   # custom port
+
+# Start the API on the default port (8080)
+& $mvn exec:java "-Dexec.mainClass=com.nada.Application"
 ```
-If port 8080 is busy: `netstat -ano | findstr :8080`, then `tasklist /FI "PID eq <pid>"` to
-confirm it is *your* old run before stopping it (`Stop-Process -Id <pid>`).
 
-## Endpoints
-All responses are `application/json; charset=UTF-8`, except 204 (no body). Errors look like `{"error":"..."}`.
+Keep the server terminal open while making requests. Open a second terminal to test the API.
 
-| Method & path | Request | Success | Errors |
-|---|---|---|---|
-| `POST /people` | `{"name":"Asha"}` | `201` `{"id":1,"name":"Asha"}` | `400` missing/null/blank/non-string name, malformed JSON |
-| `POST /knows` | `{"a":1,"b":2}` | `204` no body (idempotent) | `400` missing/invalid ids or `a==b`; `404` unknown person |
-| `GET /people/{id}/contacts` | – | `200` `[{"id":2,"name":"..."}]` (`[]` if none) | `400` bad id; `404` unknown |
-| `GET /path?from=1&to=5` | – | `200` `{"connected":true,"hops":2,"path":[1,3,5]}` or `{"connected":false}` | `400` missing/blank/non-numeric/zero/negative ids; `404` unknown person |
-
-Unknown routes return `404`; wrong method on a known route returns `405`.
-Same-person path: `{"connected":true,"hops":0,"path":[1]}`. Max 3 hops (3 succeeds, 4 → `connected:false`).
+If port 8080 is busy, identify the process before stopping it:
 
 ```powershell
-curl.exe -i -X POST http://localhost:8080/people -H "Content-Type: application/json" -d '{\"name\":\"Asha\"}'
+netstat -ano | findstr :8080
+tasklist /FI "PID eq <pid>"
+```
+
+Replace `<pid>` with the actual process ID. Stop it only after confirming it belongs to your previous application run.
+
+## API Endpoints
+
+All JSON responses use `application/json; charset=UTF-8`. The `POST /knows` endpoint returns HTTP 204 with no response body.
+
+Errors use a JSON response such as `{"error":"..."}`.
+
+| Method and path | Request example | Success | Errors |
+|---|---|---|---|
+| `POST /people` | `{"name":"Asha"}` | `201 Created` with the created person's ID and name | `400 Bad Request` for invalid input or malformed JSON |
+| `POST /knows` | `{"a":1,"b":2}` | `204 No Content` | `400 Bad Request` for invalid IDs or self-connections; `404 Not Found` for unknown people |
+| `GET /people/{id}/contacts` | No body | `200 OK` with the contact list; `[]` if there are no contacts | `400 Bad Request` for an invalid ID; `404 Not Found` for an unknown person |
+| `GET /path?from=1&to=5` | No body | `200 OK` with the path and hop count, or `{"connected":false}` if no path within the limit exists | `400 Bad Request` for invalid query parameters; `404 Not Found` for unknown people |
+
+### Shortest-path behavior
+
+- Uses breadth-first search (BFS) to find the shortest path.
+- Maximum allowed path length is 3 hops.
+- A path of 3 hops succeeds; a path requiring 4 hops returns `{"connected":false}`.
+- A person queried against themselves has a path of zero hops, for example `{"connected":true,"hops":0,"path":[1]}`.
+- Unknown people return `404 Not Found` rather than being treated as disconnected.
+
+The exact `/path` response structure must match the original assignment specification.
+
+## Example Requests
+
+Create a person:
+
+```powershell
+curl.exe -i -X POST "http://localhost:8080/people" -H "Content-Type: application/json" -d '{\"name\":\"Asha\"}'
+```
+
+Find a path:
+
+```powershell
 curl.exe -i "http://localhost:8080/path?from=1&to=2"
 ```
 
-## Design decisions
-- **One router handler on `/`** so every unknown path/method gets a consistent JSON error.
-- **`PeopleService`** owns the graph (adjacency sets) and BFS; the handler only parses, validates, and maps results to HTTP.
-  The service throws `NoSuchElementException` for unknown people, which the handler maps to 404 — so unknown people are never reported as "disconnected".
-- **BFS** with a visited set returns the first (hence shortest) path; nodes at depth 3 are not expanded.
-- **Validation** uses Jackson's tree model so ids must be real JSON integers (`"1"` and `1.5` are rejected), names must be non-blank strings.
-- **Concurrency**: all service methods are `synchronized`; simple and correct for this scale.
-- **Tests**: service unit tests plus HTTP integration tests that start a fresh server on an ephemeral port per test (no shared state, no port 8080).
-- The assignment PDF was not available when this was written; the success response shape for `/path` (`connected`, `hops`, `path` as ids) is an assumption — adjust if the PDF differs.
+## Design Decisions
 
-## Limitations / future work
-In-memory only (data lost on restart); single global lock; no pagination, auth, request-size limit, or person deletion;
-BFS builds a path per queue entry (fine for 3 hops; use parent pointers for larger graphs).
+- **HTTP routing:** A single handler registered at `/` routes requests to the appropriate endpoint and provides consistent error handling.
+- **Service layer:** `PeopleService` manages the in-memory graph and connection operations. The HTTP handler handles request parsing, validation, and HTTP responses.
+- **Graph representation:** Adjacency sets represent mutual connections and prevent duplicate contacts.
+- **Shortest path:** BFS finds the shortest path. Nodes at depth 3 are not expanded further.
+- **Validation:** Jackson's tree model is used to validate JSON fields and types. Names must be non-blank strings, and IDs must be valid positive integers.
+- **Concurrency:** Service methods are synchronized to protect the in-memory graph from concurrent modifications.
+- **Testing:** Unit tests cover service behavior. HTTP integration tests use an ephemeral port to avoid depending on port 8080.
 
-## AI disclosure
-An AI assistant (Claude) was used to review the project, rewrite the HTTP layer, and write tests and this README.
-I reviewed and can explain the code.
+## Limitations and Future Improvements
+
+- Data is stored in memory and is lost when the application restarts.
+- A single service lock limits concurrency.
+- There is no authentication, pagination, person deletion, or request-size limit.
+- BFS can be optimized with parent pointers if the graph or search depth grows.
+
+## AI Disclosure
+
+Claude was used to review the project, assist with the HTTP layer, and help write tests and this README. I reviewed the implementation and am responsible for understanding and explaining the submitted code.
