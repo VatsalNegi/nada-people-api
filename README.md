@@ -54,7 +54,7 @@ Errors use a JSON response such as `{"error":"..."}`.
 - Uses breadth-first search (BFS) to find the shortest path.
 - Maximum allowed path length is 3 hops.
 - A path of 3 hops succeeds; a path requiring 4 hops returns `{"connected":false}`.
-- A person queried against themselves has a path of zero hops, for example `{"connected":true,"hops":0,"path":[1]}`.
+- Each path entry is a person object containing both `id` and `name`. A person queried against themselves has a path of zero hops, for example `{"connected":true,"hops":0,"path":[{"id":1,"name":"Asha"}]}`.
 - Unknown people return `404 Not Found` rather than being treated as disconnected.
 
 The exact `/path` response structure must match the original assignment specification.
@@ -72,6 +72,22 @@ Find a path:
 ```powershell
 curl.exe -i "http://localhost:8080/path?from=1&to=2"
 ```
+
+Successful path response:
+
+```json
+{
+  "connected": true,
+  "hops": 2,
+  "path": [
+    {"id": 1, "name": "Asha"},
+    {"id": 3, "name": "Meera"},
+    {"id": 5, "name": "Kabir"}
+  ]
+}
+```
+
+When no path exists within 3 hops, the response is `{"connected":false}`.
 
 ## Design Decisions
 

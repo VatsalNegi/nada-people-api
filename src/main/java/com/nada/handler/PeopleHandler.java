@@ -128,8 +128,12 @@ public class PeopleHandler implements HttpHandler {
             List<Person> people = result.get();
             out.put("connected", true);
             out.put("hops", people.size() - 1);
-            ArrayNode ids = out.putArray("path");
-            people.forEach(p -> ids.add(p.getId()));
+            ArrayNode path = out.putArray("path");
+            people.forEach(person -> {
+                ObjectNode entry = path.addObject();
+                entry.put("id", person.getId());
+                entry.put("name", person.getName());
+            });
         }
         sendJson(exchange, 200, JsonUtil.mapper().writeValueAsString(out));
     }

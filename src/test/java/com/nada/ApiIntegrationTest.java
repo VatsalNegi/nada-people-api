@@ -204,7 +204,20 @@ class ApiIntegrationTest {
         JsonNode n = json(r);
         assertTrue(n.get("connected").asBoolean());
         assertEquals(3, n.get("hops").asInt());
-        assertEquals("[1,2,3,4]", n.get("path").toString());
+        assertEquals(
+                JsonUtil.mapper().readTree("""
+                        {
+                          "connected": true,
+                          "hops": 3,
+                          "path": [
+                            {"id": 1, "name": "P1"},
+                            {"id": 2, "name": "P2"},
+                            {"id": 3, "name": "P3"},
+                            {"id": 4, "name": "P4"}
+                          ]
+                        }
+                        """),
+                n);
     }
 
     @Test
@@ -217,12 +230,27 @@ class ApiIntegrationTest {
 
     @Test
     void shortestPathChosenWhenSeveralExist() throws Exception {
-        for (int i = 0; i < 5; i++) person("P" + (i + 1));
-        know(1, 2); know(2, 3); know(3, 4);   // 3 hops
-        know(1, 5); know(5, 4);               // 2 hops
-        JsonNode n = json(send("GET", "/path?from=1&to=4", null));
-        assertEquals(2, n.get("hops").asInt());
-        assertEquals("[1,5,4]", n.get("path").toString());
+        person("Asha");
+        person("Rohan");
+        person("Meera");
+        person("Tara");
+        person("Kabir");
+        know(1, 2); know(2, 3); know(3, 4); know(4, 5); // 4 hops
+        know(1, 3); know(3, 5);                         // 2 hops
+        JsonNode n = json(send("GET", "/path?from=1&to=5", null));
+        assertEquals(
+                JsonUtil.mapper().readTree("""
+                        {
+                          "connected": true,
+                          "hops": 2,
+                          "path": [
+                            {"id": 1, "name": "Asha"},
+                            {"id": 3, "name": "Meera"},
+                            {"id": 5, "name": "Kabir"}
+                          ]
+                        }
+                        """),
+                n);
     }
 
     @Test
@@ -238,9 +266,15 @@ class ApiIntegrationTest {
     void pathToSelfHasZeroHops() throws Exception {
         int a = person("A");
         JsonNode n = json(send("GET", "/path?from=" + a + "&to=" + a, null));
-        assertTrue(n.get("connected").asBoolean());
-        assertEquals(0, n.get("hops").asInt());
-        assertEquals("[" + a + "]", n.get("path").toString());
+        assertEquals(
+                JsonUtil.mapper().readTree("""
+                        {
+                          "connected": true,
+                          "hops": 0,
+                          "path": [{"id": 1, "name": "A"}]
+                        }
+                        """),
+                n);
     }
 
     @Test
